@@ -24,12 +24,12 @@ def wrapper(func):
         try:
             matched, tamperlog = func()
             if matched:
-                print_pro(put_color("[*]found matched log in ", "yellow")+FILENAME)
+                print_pro(put_color("[*]found matched log in ", "yellow") + FILENAME)
                 for i in matched:
                     print_pro(put_color(i, "white"))
 
                 if vars(__builtins__).get('raw_input', input)(
-                        put_color("\n[!]tamper them?", "white")+" [y]/n > ") != "n":
+                        put_color("\n[!]tamper them?", "white") + " [y]/n > ") != "n":
                     return tamperlog
                 else:
                     print_pro(put_color("  [!]aborted", "yellow"))
@@ -38,7 +38,27 @@ def wrapper(func):
         except Exception as e:
             print_pro("%s %s %s" % (put_color("\n[X]match log:", "red"), FILENAME, put_color("failed", "red")))
             print_pro("  [-]reason: %s" % put_color(str(e), "white"))
+
     return _wrapper
+
+
+def list_xmtplog():
+    n = 0
+    with open(FILENAME, 'rb') as fp:
+        while 1:
+            bytes = fp.read(SIZE)
+            if not bytes:
+                break
+
+            record = [str(i) if type(i) == int else i.replace(b"\x00", b"") for i in struct.unpack(STRUCT, bytes)]
+            record = [i if i else b"[empty]" for i in record]
+            try:
+                print(str(n) + " " + b" ".join(
+                    [record[4], record[2], record[5], time_transfer(record[9]).encode("utf8")]
+                ).decode("utf8"))
+                n += 1
+            except:
+                print(record)
 
 
 @wrapper
@@ -50,6 +70,7 @@ def match_xmtplog():
 
     tamperlog = b''
     matched = []
+    n = 0
     with open(FILENAME, 'rb') as fp:
         while 1:
             bytes = fp.read(SIZE)
@@ -58,11 +79,17 @@ def match_xmtplog():
 
             record = [str(i) if type(i) == int else i.replace(b"\x00", b"") for i in struct.unpack(STRUCT, bytes)]
             record = [i if i else b"[empty]" for i in record]
-
-            if all([compare(CLUES[0], record[4]),  # search username
+            n += 1
+            if len(LINE) > 0:
+                if str(n-1) in LINE:
+                    matched.append("  [-]" + b" ".join(
+                        [record[4], record[2], record[5], time_transfer(record[9]).encode("utf8")]
+                    ).decode("utf8"))
+                    continue
+            elif all([compare(CLUES[0], record[4]),  # search username
                     compare(CLUES[1], record[5]),  # search ip
                     compare(CLUES[2], record[2])]):  # search ttyname
-                matched.append("  [-]"+b" ".join(
+                matched.append("  [-]" + b" ".join(
                     [record[4], record[2], record[5], time_transfer(record[9]).encode("utf8")]
                 ).decode("utf8"))
                 continue
@@ -75,7 +102,8 @@ def match_xmtplog():
 def tamper_record(record):
     mtime, mtty, mip = int(record[0]), record[1], record[2]
     mtime_str, mtty_str, mip_str = put_color(
-        time_transfer(record[0]), "white"), put_color(record[1].decode("utf8"), "white"), put_color(record[2].decode("utf8"), "white")
+        time_transfer(record[0]), "white"), put_color(record[1].decode("utf8"), "white"), put_color(
+        record[2].decode("utf8"), "white")
 
     if MODE and (MTIME == None) or (type(MTIME) == int and int(MTIME)):
         if MTIME:
@@ -100,7 +128,7 @@ def tamper_record(record):
     # tamper_bytes = struct.pack(STRUCT, mtime, "{:\x00<32}".format(
     #    mtty).decode("utf8"), "{:\x00<64}".format(mip).decode("utf8"))
     tamper_bytes = struct.pack(STRUCT, mtime, mtty, mip)
-    return tamper_bytes, [USERNAME,  mtty_str, mtime_str, mip_str]
+    return tamper_bytes, [USERNAME, mtty_str, mtime_str, mip_str]
 
 
 @wrapper
@@ -115,7 +143,7 @@ def match_lastlog():
 
     with open(FILENAME, 'rb') as fp:
         bytes = fp.read()
-        fp.seek(SIZE*pw.pw_uid)
+        fp.seek(SIZE * pw.pw_uid)
         matched_bytes = fp.read(SIZE)
         if matched_bytes:
             record = [str(i) if type(i) == int else i.replace(b"\x00", b"")
@@ -125,12 +153,12 @@ def match_lastlog():
             tamperlog = bytes.replace(matched_bytes, tamperlog)
 
             if int(record[0]):
-                matched = ["  --- "+" ".join([
+                matched = ["  --- " + " ".join([
                     USERNAME,
                     record[1].decode("utf8"),  # ttyname
                     time_transfer(record[0]),  # time
                     record[2].decode("utf8"),  # ip
-                ])+"\n  +++ "+" ".join(tampered)]
+                ]) + "\n  +++ " + " ".join(tampered)]
 
     return matched, tamperlog
 
@@ -143,7 +171,7 @@ def tamper_log(contents):
         with open(FILENAME, 'wb') as fp:
             fp.write(contents)
 
-        print_pro(put_color("  [-]tamper records: success", "green")+check_cmd)
+        print_pro(put_color("  [-]tamper records: success", "green") + check_cmd)
     except Exception as e:
         print_pro(put_color("\n[X]tamper log: failed", "red"))
         print_pro("    [-]reason: %s" % put_color(str(e), "white"))
@@ -194,7 +222,7 @@ def print_pro(msg, debug=False):
 show_logo()
 PATH = [
     "/var/log/btmp",
-    "/var/run/utmp",
+    "/var/run/w",
     "/var/log/wtmp",
     "/var/log/lastlog"
 ]
@@ -206,13 +234,15 @@ cmds = {
     3: "lastlog",
 }
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('-l', '--log', type=int, required=True,
                     choices=[0, 1, 2, 3], help='assign log file: 0:btmp; [1:utmp]; 2:wtmp; 3:lastlog')
 
 parser.add_argument('-u', '--username', help='match records based on username')
 parser.add_argument('-i', '--ip', help='match records based on ip')
+parser.add_argument('-line', '--line', help='match records based on line')
+
+parser.add_argument('-n', '--number',action='store_true', help='list log data')
 parser.add_argument('-t', '--ttyname', help='match records based on ttyname')
 
 parser.add_argument('-f', '--filename',
@@ -222,19 +252,20 @@ parser.add_argument('-d', '--debug', action="store_true",
 
 parser.add_argument('-m', "--mode", action="store_true", help='**just for lastlog** clear or modify? default: clear')
 parser.add_argument(
-    '-mtime', help='**just for lastlog and --mode is turn on** assign time. if you want "1997-01-01 08:00:00", mtime is "1997-01-01 08:00:00"')
+    '-mtime',
+    help='**just for lastlog and --mode is turn on** assign time. if you want "1997-01-01 08:00:00", mtime is "1997-01-01 08:00:00"')
 parser.add_argument(
-    '-mstime', help='**just for lastlog and --mode is turn on** assign time. if you want "1997-01-01 08:00:00", mstime is 0')
+    '-mstime',
+    help='**just for lastlog and --mode is turn on** assign time. if you want "1997-01-01 08:00:00", mstime is 0')
 parser.add_argument('-mtty', help='**just for lastlog and --mode is turn on** assign ttyname, like: pts/1')
 parser.add_argument('-mip', help='**just for lastlog and --mode is turn on** assign ip, like: 192.168.1.1')
-
 
 args = parser.parse_args()
 DEBUG = args.debug
 
 print_pro(put_color("[+]analyse parameter", "gray"), debug=True)
 LOG = args.log
-print_pro(put_color("  [-]tamper file: "+["btmp", "utmp", "wtmp", "lastlog"][LOG], "gray"), debug=True)
+print_pro(put_color("  [-]tamper file: " + ["btmp", "utmp", "wtmp", "lastlog"][LOG], "gray"), debug=True)
 check_cmd = "\n  [-]check it with command: " + put_color(cmds[LOG], "white")
 
 USERNAME = args.username
@@ -244,11 +275,10 @@ TTYNAME = args.ttyname
 FILENAME = args.filename if args.filename else PATH[LOG]
 if FILENAME:
     location = FILENAME
-print_pro(put_color("  [-]location: "+location, "gray"), debug=True)
+print_pro(put_color("  [-]location: " + location, "gray"), debug=True)
 
 MODE = args.mode
-print_pro(put_color("  [-]mode: "+["clear", "modify"][MODE], "gray"), debug=True)
-
+print_pro(put_color("  [-]mode: " + ["clear", "modify"][MODE], "gray"), debug=True)
 
 # use mtime by default
 MTIME = int(time.mktime(
@@ -258,6 +288,8 @@ MTIME = int(time.mktime(
 MTTY = args.mtty
 MIP = args.mip
 
+NU = args.number
+LINE = args.line.split(',') if args.line else []
 
 LASTLOG_STRUCT = 'I32s256s'
 LASTLOG_STRUCT_SIZE = struct.calcsize(LASTLOG_STRUCT)
@@ -268,21 +300,26 @@ XTMP_STRUCT_SIZE = struct.calcsize(XTMP_STRUCT)
 STRUCT = [LASTLOG_STRUCT, XTMP_STRUCT][LOG != 3]
 SIZE = [LASTLOG_STRUCT_SIZE, XTMP_STRUCT_SIZE][LOG != 3]
 
-
 if not os.geteuid() == 0:
-    print_pro(put_color("  [-]is root: "+"no", "gray"), debug=True)
-    if vars(__builtins__).get('raw_input', input)(put_color("[!]you are NOT ROOT", "red")+"\n  [-]continue? y/[n] > ") != "y":
-        sys.exit(put_color("  [!]aborted", "yellow")+put_color("\n\nGood Luck :)", "green"))
+    print_pro(put_color("  [-]is root: " + "no", "gray"), debug=True)
+    if vars(__builtins__).get('raw_input', input)(
+            put_color("[!]you are NOT ROOT", "red") + "\n  [-]continue? y/[n] > ") != "y":
+        sys.exit(put_color("  [!]aborted", "yellow") + put_color("\n\nGood Luck :)", "green"))
     else:
         print_pro(put_color("  [-]as you wish\n", "yellow"))
 else:
-    print_pro(put_color("  [-]is root: "+"yes", "gray"), debug=True)
+    print_pro(put_color("  [-]is root: " + "yes", "gray"), debug=True)
 
 print_pro(put_color("[+]analyse logfile", "gray"), debug=True)
+
+if NU:
+    list_xmtplog()
+    exit()
+
 if LOG != 3:
-    CLUES = [USERNAME, IP, TTYNAME]
+    CLUES = [USERNAME, IP, TTYNAME, LINE]
     if not any(CLUES):  # CLUES is empty!
-        sys.exit(put_color("[X]give me a username or ip or ttyname", "red"))
+        sys.exit(put_color("[X]give me a username or ip or ttyname or line", "red"))
 
     # 0: change command: last
     # 1: change command: lastlog
